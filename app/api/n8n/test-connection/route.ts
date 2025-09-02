@@ -1,20 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-interface N8nNode {
-  type: string;
-  // other node properties can be added as needed
-}
-
-interface N8nWorkflow {
-  id: string;
-  name: string;
-  isArchived: boolean;
-  active: boolean;
-  createdAt: string;
-  updatedAt: string;
-  nodes: N8nNode[];
-  tags?: string[];
-}
+import { N8nWorkflow, groupWorkflowsByTriggerType } from "@/lib/workflow-utils";
 
 export async function POST(request: NextRequest) {
   try {
@@ -72,32 +57,7 @@ export async function POST(request: NextRequest) {
     // n8n API returns data in { data: [...], nextCursor?: string } format
     const workflows = data.data || [];
     
-    // Group workflows by trigger type (will be moved later)
-    const groupWorkflowsByTriggerType = (workflows: N8nWorkflow[]) => {
-      const chatTriggerType = "@n8n/n8n-nodes-langchain.chatTrigger";
-      const formTriggerType = "n8n-nodes-base.formTrigger";
-      
-      const chatTriggerWorkflows: N8nWorkflow[] = [];
-      const formTriggerWorkflows: N8nWorkflow[] = [];
-      
-      workflows.forEach(workflow => {
-        const hasChatTrigger = workflow.nodes?.some(node => node.type === chatTriggerType);
-        const hasFormTrigger = workflow.nodes?.some(node => node.type === formTriggerType);
-        
-        // A workflow could have both types of triggers
-        if (hasChatTrigger) {
-          chatTriggerWorkflows.push(workflow);
-        }
-        if (hasFormTrigger) {
-          formTriggerWorkflows.push(workflow);
-        }
-      });
-      
-      return {
-        chatTriggers: chatTriggerWorkflows,
-        formTriggers: formTriggerWorkflows
-      };
-    };
+    // Group workflows by trigger type using utility function
     
     // First filter out archived workflows
     const notArchivedWorkflows = workflows.filter(
