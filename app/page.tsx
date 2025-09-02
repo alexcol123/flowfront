@@ -30,7 +30,14 @@ export default function Home() {
     success: boolean
     message: string
     workflowCount?: number
-    workflowNames?: string[]
+    chatTriggerWorkflows?: {
+      count: number
+      names: string[]
+    }
+    formTriggerWorkflows?: {
+      count: number
+      names: string[]
+    }
   } | null>(null)
 
   const form = useForm<z.infer<typeof formSchema>>({
@@ -61,7 +68,8 @@ export default function Home() {
           success: true,
           message: `Successfully connected to n8n instance`,
           workflowCount: data.workflowCount,
-          workflowNames: data.workflowNames,
+          chatTriggerWorkflows: data.chatTriggerWorkflows,
+          formTriggerWorkflows: data.formTriggerWorkflows,
         })
       } else {
         setConnectionResult({
@@ -137,17 +145,39 @@ export default function Home() {
             {connectionResult.success && connectionResult.workflowCount !== undefined && (
               <>
                 <p className="mt-1 text-sm">
-                  Found {connectionResult.workflowCount} workflow{connectionResult.workflowCount !== 1 ? 's' : ''} in your n8n instance
+                  Found {connectionResult.workflowCount} compatible workflow{connectionResult.workflowCount !== 1 ? 's' : ''} in your n8n instance
                 </p>
-                {connectionResult.workflowNames && connectionResult.workflowNames.length > 0 && (
-                  <div className="mt-2">
-                    <p className="text-sm font-medium mb-1">Workflows:</p>
-                    <ul className="text-sm space-y-1 max-h-32 overflow-y-auto">
-                      {connectionResult.workflowNames.map((name, index) => (
+                
+                {connectionResult.chatTriggerWorkflows && connectionResult.chatTriggerWorkflows.count > 0 && (
+                  <div className="mt-3">
+                    <p className="text-sm font-medium mb-1">
+                      Chat Trigger Workflows ({connectionResult.chatTriggerWorkflows.count}):
+                    </p>
+                    <ul className="text-sm space-y-1 max-h-24 overflow-y-auto bg-white/50 rounded p-2">
+                      {connectionResult.chatTriggerWorkflows.names.map((name, index) => (
                         <li key={index} className="pl-2">• {name}</li>
                       ))}
                     </ul>
                   </div>
+                )}
+                
+                {connectionResult.formTriggerWorkflows && connectionResult.formTriggerWorkflows.count > 0 && (
+                  <div className="mt-3">
+                    <p className="text-sm font-medium mb-1">
+                      Form Trigger Workflows ({connectionResult.formTriggerWorkflows.count}):
+                    </p>
+                    <ul className="text-sm space-y-1 max-h-24 overflow-y-auto bg-white/50 rounded p-2">
+                      {connectionResult.formTriggerWorkflows.names.map((name, index) => (
+                        <li key={index} className="pl-2">• {name}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                
+                {connectionResult.workflowCount === 0 && (
+                  <p className="mt-2 text-sm italic">
+                    No workflows with chat or form triggers found. Make sure your workflows use either chatTrigger or formTrigger nodes.
+                  </p>
                 )}
               </>
             )}
