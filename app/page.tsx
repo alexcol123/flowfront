@@ -74,6 +74,11 @@ export default function Home() {
       const data = await response.json()
 
       if (data.success) {
+        // Store credentials in localStorage for other pages to use
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('n8n-credentials', JSON.stringify(values))
+        }
+        
         setConnectionResult({
           success: true,
           message: `Successfully connected to n8n instance`,
