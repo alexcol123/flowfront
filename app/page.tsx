@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
+import Link from "next/link"
 
 const formSchema = z.object({
   instanceUrl: z.string().url({
@@ -117,8 +118,11 @@ export default function Home() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8">
-      <div className="w-full max-w-4xl space-y-8">
+    <>
+
+
+      <main className="flex min-h-screen flex-col items-center justify-center p-8">
+        <div className="w-full max-w-4xl space-y-8">
         <div className="text-center">
           <h1 className="text-3xl font-bold tracking-tight">Welcome to FlowFront</h1>
           <p className="mt-2 text-sm text-gray-600">
@@ -267,7 +271,8 @@ export default function Home() {
             )}
           </>
         )}
-      </div>
-    </main>
+        </div>
+      </main>
+    </>
   )
 }

@@ -5,9 +5,9 @@ import { useState, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useForm } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { date, z } from "zod";
 import {
   Form,
   FormControl,
@@ -15,24 +15,32 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from '@/components/ui/form';
-import { Textarea } from '@/components/ui/textarea';
+} from "@/components/ui/form";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@/components/ui/select';
+} from "@/components/ui/select";
 import {
   WorkflowData,
   N8nNode,
   extractTriggerNodes,
 } from "@/lib/workflow-utils";
+import CreateWorkflowComponent from "@/components/create-workflow"
 
 export default function WorkflowPage() {
   const params = useParams();
   const workflowName = decodeURIComponent(params.workflowName as string);
+const dateNow = new Date().toISOString().replace('T', '-time-');
+
+
+  const EditedWorkflowName=  workflowName +'-FLOW-FRONT-FORM'+'-date-' + dateNow
+  console.log(EditedWorkflowName)
+
+
 
   const [workflowData, setWorkflowData] = useState<WorkflowData | null>(null);
   const [triggerNodes, setTriggerNodes] = useState<N8nNode[]>([]);
@@ -121,96 +129,114 @@ export default function WorkflowPage() {
     const schemaFields: Record<string, z.ZodTypeAny> = {};
 
     formFields.forEach((field) => {
-      const fieldName = field.fieldLabel.toLowerCase().replace(/\s+/g, '_');
+      const fieldName = field.fieldLabel.toLowerCase().replace(/\s+/g, "_");
 
       switch (field.fieldType) {
-        case 'email':
+        case "email":
           if (field.requiredField) {
-            schemaFields[fieldName] = z.string()
-              .email('Please enter a valid email')
+            schemaFields[fieldName] = z
+              .string()
+              .email("Please enter a valid email")
               .min(1, `${field.fieldLabel} is required`);
           } else {
-            schemaFields[fieldName] = z.string()
-              .email('Please enter a valid email')
+            schemaFields[fieldName] = z
+              .string()
+              .email("Please enter a valid email")
               .optional();
           }
           break;
-          
-        case 'file':
+
+        case "file":
           // Parse accepted file types
-          const acceptedTypes = field.acceptFileTypes 
-            ? field.acceptFileTypes.split(',').map(type => type.trim().toLowerCase())
+          const acceptedTypes = field.acceptFileTypes
+            ? field.acceptFileTypes
+                .split(",")
+                .map((type) => type.trim().toLowerCase())
             : [];
-          
+
           // Validation function for file types
           const validateFileType = (val: unknown) => {
             if (!val || acceptedTypes.length === 0) return true;
-            
-            const files = field.multipleFiles ? Array.from(val as FileList) : [val as File];
+
+            const files = field.multipleFiles
+              ? Array.from(val as FileList)
+              : [val as File];
             return files.every((file: File) => {
-              const extension = file.name.split('.').pop()?.toLowerCase();
-              
+              const extension = file.name.split(".").pop()?.toLowerCase();
+
               // Check direct extension match
-              if (acceptedTypes.includes(extension || '')) return true;
-              
+              if (acceptedTypes.includes(extension || "")) return true;
+
               // Check for jpg/jpeg equivalence
-              if (extension === 'jpg' && acceptedTypes.includes('jpeg')) return true;
-              if (extension === 'jpeg' && acceptedTypes.includes('jpg')) return true;
-              
+              if (extension === "jpg" && acceptedTypes.includes("jpeg"))
+                return true;
+              if (extension === "jpeg" && acceptedTypes.includes("jpg"))
+                return true;
+
               // Also check MIME type for additional validation
               const mimeType = file.type.toLowerCase();
-              if (acceptedTypes.includes('jpeg') && (mimeType === 'image/jpeg' || mimeType === 'image/jpg')) return true;
-              if (acceptedTypes.includes('png') && mimeType === 'image/png') return true;
-              if (acceptedTypes.includes('webp') && mimeType === 'image/webp') return true;
-              if (acceptedTypes.includes('gif') && mimeType === 'image/gif') return true;
-              
+              if (
+                acceptedTypes.includes("jpeg") &&
+                (mimeType === "image/jpeg" || mimeType === "image/jpg")
+              )
+                return true;
+              if (acceptedTypes.includes("png") && mimeType === "image/png")
+                return true;
+              if (acceptedTypes.includes("webp") && mimeType === "image/webp")
+                return true;
+              if (acceptedTypes.includes("gif") && mimeType === "image/gif")
+                return true;
+
               return false;
             });
           };
-          
+
           if (field.requiredField) {
-            schemaFields[fieldName] = z.any()
+            schemaFields[fieldName] = z
+              .any()
               .refine(
-                (val) => val != null && (field.multipleFiles ? val.length > 0 : val),
+                (val) =>
+                  val != null && (field.multipleFiles ? val.length > 0 : val),
                 `${field.fieldLabel} is required`
               )
-              .refine(
-                validateFileType,
-                {
-                  message: `Please upload only ${acceptedTypes.join(', ')} files`
-                }
-              );
+              .refine(validateFileType, {
+                message: `Please upload only ${acceptedTypes.join(", ")} files`,
+              });
           } else {
-            schemaFields[fieldName] = z.any()
+            schemaFields[fieldName] = z
+              .any()
               .optional()
-              .refine(
-                validateFileType,
-                {
-                  message: `Please upload only ${acceptedTypes.join(', ')} files`
-                }
-              );
+              .refine(validateFileType, {
+                message: `Please upload only ${acceptedTypes.join(", ")} files`,
+              });
           }
           break;
-          
-        case 'textarea':
+
+        case "textarea":
           if (field.requiredField) {
-            schemaFields[fieldName] = z.string().min(1, `${field.fieldLabel} is required`);
+            schemaFields[fieldName] = z
+              .string()
+              .min(1, `${field.fieldLabel} is required`);
           } else {
             schemaFields[fieldName] = z.string().optional();
           }
           break;
-          
-        case 'dropdown':
+
+        case "dropdown":
           if (field.requiredField) {
-            schemaFields[fieldName] = z.string().min(1, `${field.fieldLabel} is required`);
+            schemaFields[fieldName] = z
+              .string()
+              .min(1, `${field.fieldLabel} is required`);
           } else {
             schemaFields[fieldName] = z.string().optional();
           }
           break;
-          
+
         default:
           if (field.requiredField) {
-            schemaFields[fieldName] = z.string().min(1, `${field.fieldLabel} is required`);
+            schemaFields[fieldName] = z
+              .string()
+              .min(1, `${field.fieldLabel} is required`);
           } else {
             schemaFields[fieldName] = z.string().optional();
           }
@@ -221,17 +247,19 @@ export default function WorkflowPage() {
   };
 
   // Initialize form only when we have extracted form data
-  const formSchema = extractedFormData ? generateFormSchema(extractedFormData.formFields) : z.object({});
-  
+  const formSchema = extractedFormData
+    ? generateFormSchema(extractedFormData.formFields)
+    : z.object({});
+
   // Type for dynamic form values
   type DynamicFormValues = Record<string, string | File | FileList | undefined>;
-  
+
   const form = useForm<DynamicFormValues>({
     resolver: zodResolver(formSchema) as any,
-    defaultValues: extractedFormData 
+    defaultValues: extractedFormData
       ? extractedFormData.formFields.reduce((acc, field) => {
-          const fieldName = field.fieldLabel.toLowerCase().replace(/\s+/g, '_');
-          return { ...acc, [fieldName]: '' };
+          const fieldName = field.fieldLabel.toLowerCase().replace(/\s+/g, "_");
+          return { ...acc, [fieldName]: "" };
         }, {} as DynamicFormValues)
       : {},
   });
@@ -248,42 +276,41 @@ export default function WorkflowPage() {
 
     setFormSubmissionLoading(true);
     setSubmissionResult(null);
-    
+
     try {
-      console.log('Submitting form with data:', data);
-      console.log('Webhook URL:', webhookUrl);
-      
-      const response = await fetch('/api/n8n/submit-form', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      console.log("Submitting form with data:", data);
+      console.log("Webhook URL:", webhookUrl);
+
+      const response = await fetch("/api/n8n/submit-form", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           webhookUrl,
           formData: data,
           workflowName,
         }),
       });
-      
+
       const result = await response.json();
-      
+
       if (result.success) {
         setSubmissionResult({
           success: true,
-          message: result.message || 'Form submitted successfully!',
+          message: result.message || "Form submitted successfully!",
         });
-        console.log('Workflow response:', result.workflowResponse);
+        console.log("Workflow response:", result.workflowResponse);
         form.reset();
       } else {
         setSubmissionResult({
           success: false,
-          message: result.error || 'Error submitting form. Please try again.',
+          message: result.error || "Error submitting form. Please try again.",
         });
       }
-      
     } catch (error) {
-      console.error('Form submission error:', error);
+      console.error("Form submission error:", error);
       setSubmissionResult({
         success: false,
-        message: 'Network error. Please check your connection and try again.',
+        message: "Network error. Please check your connection and try again.",
       });
     } finally {
       setFormSubmissionLoading(false);
@@ -292,27 +319,29 @@ export default function WorkflowPage() {
 
   // Render different field types
   const renderFormField = (field: FormField) => {
-    const fieldName = field.fieldLabel.toLowerCase().replace(/\s+/g, '_');
+    const fieldName = field.fieldLabel.toLowerCase().replace(/\s+/g, "_");
 
     switch (field.fieldType) {
-      case 'file':
+      case "file":
         // Convert acceptFileTypes to proper HTML accept attribute format
-        const acceptAttribute = field.acceptFileTypes 
-          ? field.acceptFileTypes.split(',')
-              .map(type => {
+        const acceptAttribute = field.acceptFileTypes
+          ? field.acceptFileTypes
+              .split(",")
+              .map((type) => {
                 const trimmedType = type.trim().toLowerCase();
                 // Add dot prefix if not present and convert common formats
-                if (trimmedType === 'jpeg' || trimmedType === 'jpg') return '.jpeg,.jpg,image/jpeg';
-                if (trimmedType === 'png') return '.png,image/png';
-                if (trimmedType === 'webp') return '.webp,image/webp';
-                if (trimmedType === 'gif') return '.gif,image/gif';
-                if (trimmedType === 'pdf') return '.pdf,application/pdf';
+                if (trimmedType === "jpeg" || trimmedType === "jpg")
+                  return ".jpeg,.jpg,image/jpeg";
+                if (trimmedType === "png") return ".png,image/png";
+                if (trimmedType === "webp") return ".webp,image/webp";
+                if (trimmedType === "gif") return ".gif,image/gif";
+                if (trimmedType === "pdf") return ".pdf,application/pdf";
                 // Default: add dot prefix
                 return `.${trimmedType}`;
               })
-              .join(',')
-          : '';
-          
+              .join(",")
+          : "";
+
         return (
           <FormField
             key={fieldName}
@@ -322,7 +351,9 @@ export default function WorkflowPage() {
               <FormItem>
                 <FormLabel>
                   {field.fieldLabel}
-                  {field.requiredField && <span className="text-red-500 ml-1">*</span>}
+                  {field.requiredField && (
+                    <span className="text-red-500 ml-1">*</span>
+                  )}
                 </FormLabel>
                 <FormControl>
                   <Input
@@ -331,7 +362,9 @@ export default function WorkflowPage() {
                     multiple={field.multipleFiles}
                     onChange={(e) => {
                       const files = e.target.files;
-                      formField.onChange(field.multipleFiles ? files : files?.[0]);
+                      formField.onChange(
+                        field.multipleFiles ? files : files?.[0]
+                      );
                     }}
                   />
                 </FormControl>
@@ -346,7 +379,7 @@ export default function WorkflowPage() {
           />
         );
 
-      case 'textarea':
+      case "textarea":
         return (
           <FormField
             key={fieldName}
@@ -356,13 +389,15 @@ export default function WorkflowPage() {
               <FormItem>
                 <FormLabel>
                   {field.fieldLabel}
-                  {field.requiredField && <span className="text-red-500 ml-1">*</span>}
+                  {field.requiredField && (
+                    <span className="text-red-500 ml-1">*</span>
+                  )}
                 </FormLabel>
                 <FormControl>
                   <Textarea
                     placeholder={field.placeholder}
                     {...formField}
-                    value={formField.value as string || ''}
+                    value={(formField.value as string) || ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -371,7 +406,7 @@ export default function WorkflowPage() {
           />
         );
 
-      case 'dropdown':
+      case "dropdown":
         return (
           <FormField
             key={fieldName}
@@ -381,9 +416,14 @@ export default function WorkflowPage() {
               <FormItem>
                 <FormLabel>
                   {field.fieldLabel}
-                  {field.requiredField && <span className="text-red-500 ml-1">*</span>}
+                  {field.requiredField && (
+                    <span className="text-red-500 ml-1">*</span>
+                  )}
                 </FormLabel>
-                <Select onValueChange={formField.onChange} defaultValue={formField.value as string}>
+                <Select
+                  onValueChange={formField.onChange}
+                  defaultValue={formField.value as string}
+                >
                   <FormControl>
                     <SelectTrigger>
                       <SelectValue placeholder="Select an option" />
@@ -403,7 +443,7 @@ export default function WorkflowPage() {
           />
         );
 
-      case 'email':
+      case "email":
         return (
           <FormField
             key={fieldName}
@@ -413,14 +453,16 @@ export default function WorkflowPage() {
               <FormItem>
                 <FormLabel>
                   {field.fieldLabel}
-                  {field.requiredField && <span className="text-red-500 ml-1">*</span>}
+                  {field.requiredField && (
+                    <span className="text-red-500 ml-1">*</span>
+                  )}
                 </FormLabel>
                 <FormControl>
                   <Input
                     type="email"
                     placeholder={field.placeholder}
                     {...formField}
-                    value={formField.value as string || ''}
+                    value={(formField.value as string) || ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -439,14 +481,16 @@ export default function WorkflowPage() {
               <FormItem>
                 <FormLabel>
                   {field.fieldLabel}
-                  {field.requiredField && <span className="text-red-500 ml-1">*</span>}
+                  {field.requiredField && (
+                    <span className="text-red-500 ml-1">*</span>
+                  )}
                 </FormLabel>
                 <FormControl>
                   <Input
                     type="text"
                     placeholder={field.placeholder}
                     {...formField}
-                    value={formField.value as string || ''}
+                    value={(formField.value as string) || ""}
                   />
                 </FormControl>
                 <FormMessage />
@@ -540,7 +584,7 @@ export default function WorkflowPage() {
         )}
 
         <h2 className="text-xl font-semibold">Step 2: Full workflow</h2>
-        
+
         {/* Show message if no trigger nodes found */}
         {workflowData && triggerNodes.length === 0 && (
           <Card className="w-full">
@@ -584,7 +628,7 @@ export default function WorkflowPage() {
         )}
 
         <h2 className="text-xl font-semibold">Step 3: Form Node</h2>
-        
+
         {/* Trigger Nodes JSON Display */}
         {triggerNodes.length > 0 && (
           <Card className="w-full">
@@ -606,7 +650,9 @@ export default function WorkflowPage() {
           </Card>
         )}
 
-        <h2 className="text-xl font-semibold">Step 4: Extract Data from the Form Node</h2>
+        <h2 className="text-xl font-semibold">
+          Step 4: Extract Data from the Form Node
+        </h2>
 
         {/* Display extracted form data */}
         {extractedFormData && (
@@ -652,7 +698,8 @@ export default function WorkflowPage() {
                   className="w-full"
                 />
                 <p className="text-xs text-blue-700 mt-1">
-                  Enter the webhook URL from your n8n workflow to submit the form data
+                  Enter the webhook URL from your n8n workflow to submit the
+                  form data
                 </p>
               </div>
 
@@ -670,15 +717,18 @@ export default function WorkflowPage() {
               )}
 
               <Form {...form}>
-                <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6">
+                <form
+                  onSubmit={form.handleSubmit(handleFormSubmit)}
+                  className="space-y-6"
+                >
                   {extractedFormData.formFields.map(renderFormField)}
-                  
-                  <Button 
-                    type="submit" 
-                    className="w-full" 
+
+                  <Button
+                    type="submit"
+                    className="w-full"
                     disabled={formSubmissionLoading || !webhookUrl}
                   >
-                    {formSubmissionLoading ? 'Submitting...' : 'Submit Form'}
+                    {formSubmissionLoading ? "Submitting..." : "Submit Form"}
                   </Button>
                 </form>
               </Form>
@@ -694,15 +744,21 @@ export default function WorkflowPage() {
             </CardHeader>
             <CardContent>
               <p className="text-orange-600 text-center py-4">
-                Could not extract form data from trigger nodes. 
+                Could not extract form data from trigger nodes.
                 <br />
                 <span className="text-sm text-gray-500">
-                  Make sure the trigger node has the correct formTitle, formDescription, and formFields structure.
+                  Make sure the trigger node has the correct formTitle,
+                  formDescription, and formFields structure.
                 </span>
               </p>
             </CardContent>
           </Card>
         )}
+
+        <h2 className="text-xl font-semibold">
+          Step 6: Create New Workflow With only a Webhook{" "}
+        </h2>
+        < CreateWorkflowComponent  workflowName={EditedWorkflowName}  />
       </div>
     </main>
   );
