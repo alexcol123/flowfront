@@ -61,10 +61,34 @@ export default function CreateWorkflow({ workflowName }: CreateWorkflowProps) {
     setResult(null);
 
     try {
-      // If a custom workflow name is provided, use it
-      const workflowData = workflowName
-        ? { ...testWorkflow, name: workflowName }
-        : testWorkflow;
+      // Generate unique IDs for webhook and node
+      const webhookId = crypto.randomUUID();
+      const nodeId = crypto.randomUUID();
+      
+      // Create workflow data with unique IDs
+      const workflowData = {
+        ...testWorkflow,
+        name: workflowName || `Webhook-${Date.now()}`,
+        nodes: testWorkflow.nodes.map((node: any) => {
+          // If it's a webhook node, update the IDs
+          if (node.type === "n8n-nodes-base.webhook") {
+            return {
+              ...node,
+              id: nodeId,
+              webhookId: webhookId,
+              parameters: {
+                ...node.parameters,
+                path: webhookId, // Update the path to match webhookId
+              },
+            };
+          }
+          // For other node types, just generate a new ID
+          return {
+            ...node,
+            id: crypto.randomUUID(),
+          };
+        }),
+      };
 
       const response = await fetch("/api/n8n/createWorkflow", {
         method: "POST",
@@ -81,6 +105,8 @@ export default function CreateWorkflow({ workflowName }: CreateWorkflowProps) {
       const data = await response.json();
 
       console.log("API Response:", data);
+      console.log("Generated webhook ID:", webhookId);
+      console.log("Generated node ID:", nodeId);
 
       if (data.success) {
         setResult({
@@ -129,9 +155,10 @@ export default function CreateWorkflow({ workflowName }: CreateWorkflowProps) {
         >
           <p className="font-medium">{result.message}</p>
           {result.success && result.workflow && (
-            <div className="mt-3 text-sm">
-              <p>Workflow ID: {result.workflow.id}</p>
-              <p>Workflow Name: {result.workflow.name}</p>
+            <div className="mt-3 text-sm space-y-1">
+              <p><strong>Workflow ID:</strong> {result.workflow.id}</p>
+              <p><strong>Workflow Name:</strong> {result.workflow.name}</p>
+              <p><strong>Webhook URL:</strong> {credentials?.instanceUrl}/webhook/{result.workflow.nodes?.[0]?.parameters?.path}</p>
             </div>
           )}
         </div>

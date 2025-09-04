@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { date, z } from "zod";
+import { z } from "zod";
 import {
   Form,
   FormControl,
@@ -29,18 +29,16 @@ import {
   N8nNode,
   extractTriggerNodes,
 } from "@/lib/workflow-utils";
-import CreateWorkflowComponent from "@/components/create-workflow"
+import CreateWorkflowComponent from "@/components/create-workflow";
 
 export default function WorkflowPage() {
   const params = useParams();
   const workflowName = decodeURIComponent(params.workflowName as string);
-const dateNow = new Date().toISOString().replace('T', '-time-');
+  const dateNow = new Date().toISOString().replace("T", "-time-");
 
-
-  const EditedWorkflowName=  workflowName +'-FLOW-FRONT-FORM'+'-date-' + dateNow
-  console.log(EditedWorkflowName)
-
-
+  const EditedWorkflowName =
+    workflowName + "-FLOW-FRONT-FORM" + "-date-" + dateNow;
+  const FinalWorkflowName = EditedWorkflowName + "-FINAL";
 
   const [workflowData, setWorkflowData] = useState<WorkflowData | null>(null);
   const [triggerNodes, setTriggerNodes] = useState<N8nNode[]>([]);
@@ -54,6 +52,12 @@ const dateNow = new Date().toISOString().replace('T', '-time-');
   const [submissionResult, setSubmissionResult] = useState<{
     success: boolean;
     message: string;
+  } | null>(null);
+  const [isUploadingFinal, setIsUploadingFinal] = useState(false);
+  const [uploadFinalResult, setUploadFinalResult] = useState<{
+    success: boolean;
+    message: string;
+    workflow?: any;
   } | null>(null);
 
   // Extract form data from trigger nodes
@@ -265,6 +269,43 @@ const dateNow = new Date().toISOString().replace('T', '-time-');
   });
 
   // Handle form submission
+  // Helper function to create FormData for n8n webhook (following reference pattern)
+  const createFormDataForN8n = (formData: Record<string, unknown>) => {
+    if (!extractedFormData) return new FormData();
+
+    const n8nFormData = new FormData();
+
+    // Add webhook URL and workflow name for API processing
+    n8nFormData.append("webhookUrl", webhookUrl);
+    n8nFormData.append("workflowName", workflowName);
+
+    extractedFormData.formFields.forEach((field) => {
+      const fieldKey = field.fieldLabel.toLowerCase().replace(/\s+/g, "_");
+      const fieldValue = formData[fieldKey];
+
+      if (fieldValue) {
+        if (field.fieldType === "file") {
+          // Handle file fields - append files directly
+          const files = Array.isArray(fieldValue) ? fieldValue : [fieldValue];
+          files.forEach((file) => {
+            if (file instanceof File) {
+              // Use underscore format for field names (like reference)
+              n8nFormData.append(field.fieldLabel.replace(/\s+/g, "_"), file);
+            }
+          });
+        } else {
+          // Handle regular fields - use underscore format
+          n8nFormData.append(
+            field.fieldLabel.replace(/\s+/g, "_"),
+            fieldValue as string
+          );
+        }
+      }
+    });
+
+    return n8nFormData;
+  };
+
   const handleFormSubmit = async (data: Record<string, unknown>) => {
     if (!webhookUrl) {
       setSubmissionResult({
@@ -278,17 +319,18 @@ const dateNow = new Date().toISOString().replace('T', '-time-');
     setSubmissionResult(null);
 
     try {
-      console.log("Submitting form with data:", data);
+      console.log("Raw form data:", data);
+
+      // Create FormData for n8n webhook (following reference pattern)
+      const n8nFormData = createFormDataForN8n(data);
+
+      console.log("Created FormData for n8n");
       console.log("Webhook URL:", webhookUrl);
 
+      // Send FormData (not JSON) - following reference pattern
       const response = await fetch("/api/n8n/submit-form", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          webhookUrl,
-          formData: data,
-          workflowName,
-        }),
+        body: n8nFormData, // Send FormData directly, no Content-Type header
       });
 
       const result = await response.json();
@@ -627,6 +669,337 @@ const dateNow = new Date().toISOString().replace('T', '-time-');
           </Card>
         )}
 
+        {/* Transformed Workflow with Webhook */}
+        {workflowData &&
+          extractedFormData?.formFields &&
+          extractedFormData.formFields.length > 0 && (
+            <Card className="w-full border-blue-500">
+              <CardHeader>
+                <CardTitle>🔄 Transformed Workflow (Form → Webhook)</CardTitle>
+                <p className="text-sm text-gray-500">
+                  This workflow has been transformed to use a webhook trigger
+                  instead of a form trigger. All data references have been
+                  updated from {`{{$json.fieldName}}`} to{" "}
+                  {`{{$json.body.fieldName}}`}.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {(() => {
+                  // Generate unique IDs for the new webhook node
+                  const webhookId = crypto.randomUUID();
+                  const webhookNodeId = crypto.randomUUID();
+
+                  // Create the webhook trigger node
+                  const webhookNode = {
+                    parameters: {
+                      httpMethod: "POST",
+                      path: webhookId,
+                      options: {},
+                    },
+                    type: "n8n-nodes-base.webhook",
+                    typeVersion: 2.1,
+                    position: [0, 0], // Will be updated based on form trigger position
+                    id: webhookNodeId,
+                    name: "Webhook",
+                    webhookId: webhookId,
+                  };
+
+                  // Transform the workflow
+                  const transformedWorkflow = (() => {
+                    const workflow = JSON.parse(JSON.stringify(workflowData)); // Deep clone
+
+                    // Find the form trigger node
+                    const formTriggerIndex = workflow.nodes?.findIndex(
+                      (node: any) => node.type === "n8n-nodes-base.formTrigger"
+                    );
+
+                    if (formTriggerIndex !== -1 && workflow.nodes) {
+                      const formTrigger = workflow.nodes[formTriggerIndex];
+
+                      // Use the form trigger's position for the webhook
+                      webhookNode.position = formTrigger.position || [0, 0];
+
+                      // Replace form trigger with webhook
+                      workflow.nodes[formTriggerIndex] = webhookNode;
+
+                      // Update connections - replace form trigger name with webhook name
+                      if (
+                        workflow.connections &&
+                        workflow.connections[formTrigger.name]
+                      ) {
+                        workflow.connections["Webhook"] =
+                          workflow.connections[formTrigger.name];
+                        delete workflow.connections[formTrigger.name];
+                      }
+
+                      // Transform all other nodes to update data references
+                      workflow.nodes = workflow.nodes.map((node: any) => {
+                        if (node.id === webhookNodeId) return node; // Skip the webhook node itself
+
+                        // Deep transform all parameters to update variable references
+                        const transformParameters = (obj: any): any => {
+                          if (typeof obj === "string") {
+                            // Transform field references from form format to webhook format
+                            let transformed = obj;
+
+                            // Get the original form trigger node name for complex patterns
+                            const formTriggerNodeName =
+                              formTrigger.name || "Form";
+
+                            // Multi-step transformation approach (more flexible and robust)
+                            // Step 1: Replace ALL references to the original form node with 'Webhook'
+                            const escapedNodeName = formTriggerNodeName.replace(
+                              /[.*+?^${}()|[\]\\]/g,
+                              "\\$&"
+                            );
+                            transformed = transformed.replace(
+                              new RegExp(`\\$\\('${escapedNodeName}'\\)`, "g"),
+                              `$('Webhook')`
+                            );
+
+                            // Step 2: Transform .json to .json.body for webhook references
+                            // Handle dot notation: .json. -> .json.body.
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.first\(\)\.json\./g,
+                              `$('Webhook').first().json.body.`
+                            );
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.last\(\)\.json\./g,
+                              `$('Webhook').first().json.body.`  // Convert .last() to .first() for webhooks
+                            );
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.item\.json\./g,
+                              `$('Webhook').item.json.body.`
+                            );
+                            // Handle bracket notation: .json[ -> .json.body[
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.first\(\)\.json\[/g,
+                              `$('Webhook').first().json.body[`
+                            );
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.last\(\)\.json\[/g,
+                              `$('Webhook').first().json.body[`  // Convert .last() to .first() for webhooks
+                            );
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.item\.json\[/g,
+                              `$('Webhook').item.json.body[`
+                            );
+
+                            // Step 3: Convert bracket notation to dot notation with underscores
+                            // Handle both single and double quotes in bracket notation
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.first\(\)\.json\.body\['([^']+)'\]/g,
+                              (match, fieldName) =>
+                                `$('Webhook').first().json.body.${fieldName.replace(
+                                  /\s+/g,
+                                  "_"
+                                )}`
+                            );
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.last\(\)\.json\.body\['([^']+)'\]/g,
+                              (match, fieldName) =>
+                                `$('Webhook').first().json.body.${fieldName.replace(
+                                  /\s+/g,
+                                  "_"
+                                )}`  // Convert .last() to .first() for webhooks
+                            );
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.first\(\)\.json\.body\["([^"]+)"\]/g,
+                              (match, fieldName) =>
+                                `$('Webhook').first().json.body.${fieldName.replace(
+                                  /\s+/g,
+                                  "_"
+                                )}`
+                            );
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.last\(\)\.json\.body\["([^"]+)"\]/g,
+                              (match, fieldName) =>
+                                `$('Webhook').first().json.body.${fieldName.replace(
+                                  /\s+/g,
+                                  "_"
+                                )}`  // Convert .last() to .first() for webhooks
+                            );
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.item\.json\.body\['([^']+)'\]/g,
+                              (match, fieldName) =>
+                                `$('Webhook').item.json.body.${fieldName.replace(
+                                  /\s+/g,
+                                  "_"
+                                )}`
+                            );
+                            transformed = transformed.replace(
+                              /\$\('Webhook'\)\.item\.json\.body\["([^"]+)"\]/g,
+                              (match, fieldName) =>
+                                `$('Webhook').item.json.body.${fieldName.replace(
+                                  /\s+/g,
+                                  "_"
+                                )}`
+                            );
+
+                            // Basic $json patterns (for known form fields)
+                            extractedFormData.formFields.forEach(
+                              (field: any) => {
+                                const formFieldName = field.fieldLabel;
+                                const webhookFieldName =
+                                  field.fieldLabel.replace(/\s+/g, "_");
+                                const webhookReference = `$json.body.${webhookFieldName}`;
+
+                                const basicPatterns = [
+                                  {
+                                    from: `{{ $json["${formFieldName}"] }}`,
+                                    to: `{{ ${webhookReference} }}`,
+                                  },
+                                  {
+                                    from: `{{ $json['${formFieldName}'] }}`,
+                                    to: `{{ ${webhookReference} }}`,
+                                  },
+                                  {
+                                    from: `{{ $json.${formFieldName} }}`,
+                                    to: `{{ ${webhookReference} }}`,
+                                  },
+                                  {
+                                    from: `{{$json["${formFieldName}"]}}`,
+                                    to: `{{ ${webhookReference} }}`,
+                                  },
+                                  {
+                                    from: `{{$json['${formFieldName}']}}`,
+                                    to: `{{ ${webhookReference} }}`,
+                                  },
+                                  {
+                                    from: `{{$json.${formFieldName}}}`,
+                                    to: `{{ ${webhookReference} }}`,
+                                  },
+                                ];
+
+                                basicPatterns.forEach((pattern) => {
+                                  transformed = transformed.replace(
+                                    new RegExp(
+                                      pattern.from.replace(
+                                        /[.*+?^${}()|[\]\\]/g,
+                                        "\\$&"
+                                      ),
+                                      "g"
+                                    ),
+                                    pattern.to
+                                  );
+                                });
+                              }
+                            );
+
+                            return transformed;
+                          } else if (Array.isArray(obj)) {
+                            return obj.map(transformParameters);
+                          } else if (obj && typeof obj === "object") {
+                            const result: any = {};
+                            for (const key in obj) {
+                              result[key] = transformParameters(obj[key]);
+                            }
+                            return result;
+                          }
+                          return obj;
+                        };
+
+                        return {
+                          ...node,
+                          parameters: transformParameters(node.parameters),
+                        };
+                      });
+                    }
+
+                    // Update workflow name
+                    workflow.name = EditedWorkflowName;
+
+                    return workflow;
+                  })();
+
+                  return (
+                    <>
+                      <div className="space-y-2 mb-4">
+                        <p className="text-sm font-medium">Webhook Details:</p>
+                        <div className="bg-blue-50 p-3 rounded-lg space-y-1">
+                          <p className="text-xs">
+                            <strong>Webhook ID:</strong> {webhookId}
+                          </p>
+                          <p className="text-xs">
+                            <strong>Webhook URL:</strong> {instanceUrl}/webhook/
+                            {webhookId}
+                          </p>
+                          <p className="text-xs">
+                            <strong>Method:</strong> POST
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-2 mb-4">
+                        <p className="text-sm font-medium">Field Mappings:</p>
+                        <div className="bg-gray-50 p-3 rounded-lg space-y-1">
+                          {extractedFormData.formFields.map((field: any) => {
+                            const formFieldName = field.fieldLabel; // Original form trigger field
+                            const webhookFieldName = field.fieldLabel.replace(
+                              /\s+/g,
+                              "_"
+                            ); // Underscore format
+                            const webhookRef = `$json.body.${webhookFieldName}`;
+
+                            return (
+                              <p
+                                key={formFieldName}
+                                className="text-xs font-mono"
+                              >
+                                {`{{ $json["${formFieldName}"] }}`} →{" "}
+                                {`{{ ${webhookRef} }}`}
+                              </p>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="bg-gray-50 rounded-lg p-4 max-h-96 overflow-auto">
+                        <pre className="text-sm font-mono whitespace-pre-wrap">
+                          {JSON.stringify(transformedWorkflow, null, 2)}
+                        </pre>
+                      </div>
+
+                      <div className="flex gap-2 mt-4">
+                        <Button
+                          onClick={() => {
+                            const blob = new Blob(
+                              [JSON.stringify(transformedWorkflow, null, 2)],
+                              { type: "application/json" }
+                            );
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement("a");
+                            a.href = url;
+                            a.download = `${EditedWorkflowName}.json`;
+                            document.body.appendChild(a);
+                            a.click();
+                            document.body.removeChild(a);
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          📥 Download Transformed Workflow
+                        </Button>
+
+                        <Button
+                          onClick={() => {
+                            navigator.clipboard.writeText(
+                              JSON.stringify(transformedWorkflow, null, 2)
+                            );
+                            alert("Transformed workflow copied to clipboard!");
+                          }}
+                          variant="outline"
+                        >
+                          📋 Copy to Clipboard
+                        </Button>
+                      </div>
+                    </>
+                  );
+                })()}
+              </CardContent>
+            </Card>
+          )}
+
         <h2 className="text-xl font-semibold">Step 3: Form Node</h2>
 
         {/* Trigger Nodes JSON Display */}
@@ -680,9 +1053,11 @@ const dateNow = new Date().toISOString().replace('T', '-time-');
           <Card className="w-full">
             <CardHeader>
               <CardTitle>{extractedFormData.formTitle}</CardTitle>
-              <p className="text-sm text-gray-600 whitespace-pre-wrap">
-                {extractedFormData.formDescription}
-              </p>
+              {extractedFormData.formDescription && (
+                <p className="text-sm text-gray-600 whitespace-pre-wrap">
+                  {extractedFormData.formDescription}
+                </p>
+              )}
             </CardHeader>
             <CardContent>
               {/* Webhook URL Input */}
@@ -747,8 +1122,8 @@ const dateNow = new Date().toISOString().replace('T', '-time-');
                 Could not extract form data from trigger nodes.
                 <br />
                 <span className="text-sm text-gray-500">
-                  Make sure the trigger node has the correct formTitle,
-                  formDescription, and formFields structure.
+                  Make sure the trigger node has the correct formTitle and
+                  formFields structure.
                 </span>
               </p>
             </CardContent>
@@ -758,16 +1133,438 @@ const dateNow = new Date().toISOString().replace('T', '-time-');
         <h2 className="text-xl font-semibold">
           Step 6: Create New Workflow With only a Webhook{" "}
         </h2>
-        < CreateWorkflowComponent  workflowName={EditedWorkflowName}  />
+        <CreateWorkflowComponent workflowName={EditedWorkflowName} />
+
+        <h2 className="text-xl font-semibold">
+          Step 7: Create Transformed Workflow in n8n
+        </h2>
+
+        {workflowData &&
+          extractedFormData?.formFields &&
+          extractedFormData.formFields.length > 0 && (
+            <Card className="w-full border-green-500">
+              <CardHeader>
+                <CardTitle>
+                  ✨ Ready to Create Your Webhook-Based Workflow
+                </CardTitle>
+                <p className="text-sm text-gray-500">
+                  Click the button below to create the transformed workflow with
+                  webhook trigger in your n8n instance. This will replace the
+                  form trigger with a webhook and update all data references.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="bg-yellow-50 p-4 rounded-lg">
+                    <p className="text-sm text-yellow-800 font-medium mb-2">
+                      ⚠️ Before Creating:
+                    </p>
+                    <ul className="text-xs text-yellow-700 space-y-1 list-disc list-inside">
+                      <li>
+                        The workflow above has been transformed to use webhook
+                        instead of form trigger
+                      </li>
+                      <li>
+                        All field references have been updated to use webhook
+                        body format
+                      </li>
+                      <li>
+                        A unique webhook ID will be generated automatically
+                      </li>
+                      <li>
+                        You can download or copy the transformed workflow JSON
+                        above first
+                      </li>
+                    </ul>
+                  </div>
+
+                  <p className="text-sm text-gray-600">
+                    <strong>Workflow Name:</strong> {EditedWorkflowName}
+                  </p>
+
+                  {/* This would need to be implemented to actually create the transformed workflow */}
+                  <div className="text-center">
+                    <p className="text-xs text-gray-500 mb-2">
+                      Use the Download or Copy buttons above to get the
+                      transformed workflow, then import it manually in n8n.
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+        <h2 className="text-xl font-semibold">
+          Step 8: Upload Transformed Workflow to n8n
+        </h2>
+
+        {workflowData &&
+          extractedFormData?.formFields &&
+          extractedFormData.formFields.length > 0 && (
+            <Card className="w-full border-purple-500">
+              <CardHeader>
+                <CardTitle>🚀 Upload Transformed Workflow</CardTitle>
+                <p className="text-sm text-gray-500">
+                  Upload the transformed workflow (form → webhook) directly to
+                  your n8n instance with a single click.
+                </p>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="bg-purple-50 p-4 rounded-lg">
+                    <p className="text-sm text-purple-800 font-medium mb-2">
+                      📋 What this will do:
+                    </p>
+                    <ul className="text-xs text-purple-700 space-y-1 list-disc list-inside">
+                      <li>
+                        Generate the transformed workflow with webhook trigger
+                      </li>
+                      <li>
+                        Replace form trigger with webhook and update all data
+                        references
+                      </li>
+                      <li>
+                        Create unique webhook ID and node IDs automatically
+                      </li>
+                      <li>
+                        Upload directly to your n8n instance using the API
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div className="text-center space-y-3">
+                    <p className="text-sm text-gray-600">
+                      <strong>Final Workflow Name:</strong> {FinalWorkflowName}
+                    </p>
+
+                    <Button
+                      onClick={() =>
+                        handleUploadTransformedWorkflow(
+                          workflowData,
+                          extractedFormData,
+                          { instanceUrl, apiKey },
+                          setIsUploadingFinal,
+                          setUploadFinalResult
+                        )
+                      }
+                      disabled={isUploadingFinal}
+                      className="bg-purple-600 hover:bg-purple-700"
+                    >
+                      {isUploadingFinal
+                        ? "Uploading..."
+                        : "🚀 Upload Transformed Workflow to n8n"}
+                    </Button>
+                  </div>
+
+                  {uploadFinalResult && (
+                    <div
+                      className={`mt-4 p-4 rounded-md border ${
+                        uploadFinalResult.success
+                          ? "bg-green-50 text-green-800 border-green-200"
+                          : "bg-red-50 text-red-800 border-red-200"
+                      }`}
+                    >
+                      <p className="font-medium">{uploadFinalResult.message}</p>
+                      {uploadFinalResult.success &&
+                        uploadFinalResult.workflow && (
+                          <div className="mt-3 text-sm space-y-1">
+                            <p>
+                              <strong>Workflow ID:</strong>{" "}
+                              {uploadFinalResult.workflow.id}
+                            </p>
+                            <p>
+                              <strong>Workflow Name:</strong>{" "}
+                              {uploadFinalResult.workflow.name}
+                            </p>
+                            <p>
+                              <strong>Webhook URL:</strong> {instanceUrl}
+                              /webhook/{uploadFinalResult.workflow.webhookId}
+                            </p>
+                            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                              <p className="text-yellow-800 text-xs">
+                                <strong>Next Steps:</strong> Use the webhook URL
+                                above as the endpoint for your form submissions.
+                                The form data will be available in the workflow
+                                as {`{{ $json.body.field_name }}`}.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
       </div>
     </main>
   );
 }
 
+// Transformation function to convert form trigger workflow to webhook workflow
+const generateTransformedWorkflow = (
+  workflowData: WorkflowData,
+  extractedFormData: FormData,
+  workflowName: string
+) => {
+  // Generate unique IDs for the new webhook node
+  const webhookId = crypto.randomUUID();
+  const webhookNodeId = crypto.randomUUID();
+
+  // Create the webhook trigger node
+  const webhookNode = {
+    parameters: {
+      httpMethod: "POST",
+      path: webhookId,
+      options: {},
+    },
+    type: "n8n-nodes-base.webhook",
+    typeVersion: 2.1,
+    position: [0, 0], // Will be updated based on form trigger position
+    id: webhookNodeId,
+    name: "Webhook",
+    webhookId: webhookId,
+  };
+
+  const workflow = JSON.parse(JSON.stringify(workflowData)); // Deep clone
+
+  // Find the form trigger node
+  const formTriggerIndex = workflow.nodes?.findIndex(
+    (node: any) => node.type === "n8n-nodes-base.formTrigger"
+  );
+
+  if (formTriggerIndex !== -1 && workflow.nodes) {
+    const formTrigger = workflow.nodes[formTriggerIndex];
+
+    // Use the form trigger's position for the webhook
+    webhookNode.position = formTrigger.position || [0, 0];
+
+    // Replace form trigger with webhook
+    workflow.nodes[formTriggerIndex] = webhookNode;
+
+    // Update connections - replace form trigger name with webhook name
+    if (workflow.connections && workflow.connections[formTrigger.name]) {
+      workflow.connections["Webhook"] = workflow.connections[formTrigger.name];
+      delete workflow.connections[formTrigger.name];
+    }
+
+    // Transform all other nodes to update data references
+    workflow.nodes = workflow.nodes.map((node: any) => {
+      if (node.id === webhookNodeId) return node; // Skip the webhook node itself
+
+      // Deep transform all parameters to update variable references
+      const transformParameters = (obj: any): any => {
+        if (typeof obj === "string") {
+          // Transform field references from form format to webhook format
+          let transformed = obj;
+
+          // Get the original form trigger node name for complex patterns
+          const formTriggerNodeName = formTrigger.name || "Form";
+
+          // Multi-step transformation approach (more flexible and robust)
+          // Step 1: Replace ALL references to the original form node with 'Webhook'
+          const escapedNodeName = formTriggerNodeName.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&"
+          );
+          transformed = transformed.replace(
+            new RegExp(`\\$\\('${escapedNodeName}'\\)`, "g"),
+            `$('Webhook')`
+          );
+
+          // Step 2: Transform .json to .json.body for webhook references
+          // Handle dot notation: .json. -> .json.body.
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.first\(\)\.json\./g,
+            `$('Webhook').first().json.body.`
+          );
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.last\(\)\.json\./g,
+            `$('Webhook').first().json.body.`  // Convert .last() to .first() for webhooks
+          );
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.item\.json\./g,
+            `$('Webhook').item.json.body.`
+          );
+          // Handle bracket notation: .json[ -> .json.body[
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.first\(\)\.json\[/g,
+            `$('Webhook').first().json.body[`
+          );
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.last\(\)\.json\[/g,
+            `$('Webhook').first().json.body[`  // Convert .last() to .first() for webhooks
+          );
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.item\.json\[/g,
+            `$('Webhook').item.json.body[`
+          );
+
+          // Step 3: Convert bracket notation to dot notation with underscores
+          // Handle both single and double quotes in bracket notation
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.first\(\)\.json\.body\['([^']+)'\]/g,
+            (match, fieldName) =>
+              `$('Webhook').first().json.body.${fieldName.replace(/\s+/g, "_")}`
+          );
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.last\(\)\.json\.body\['([^']+)'\]/g,
+            (match, fieldName) =>
+              `$('Webhook').first().json.body.${fieldName.replace(/\s+/g, "_")}`  // Convert .last() to .first() for webhooks
+          );
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.first\(\)\.json\.body\["([^"]+)"\]/g,
+            (match, fieldName) =>
+              `$('Webhook').first().json.body.${fieldName.replace(/\s+/g, "_")}`
+          );
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.last\(\)\.json\.body\["([^"]+)"\]/g,
+            (match, fieldName) =>
+              `$('Webhook').first().json.body.${fieldName.replace(/\s+/g, "_")}`  // Convert .last() to .first() for webhooks
+          );
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.item\.json\.body\['([^']+)'\]/g,
+            (match, fieldName) =>
+              `$('Webhook').item.json.body.${fieldName.replace(/\s+/g, "_")}`
+          );
+          transformed = transformed.replace(
+            /\$\('Webhook'\)\.item\.json\.body\["([^"]+)"\]/g,
+            (match, fieldName) =>
+              `$('Webhook').item.json.body.${fieldName.replace(/\s+/g, "_")}`
+          );
+
+          // Basic $json patterns (for known form fields)
+          extractedFormData.formFields.forEach((field: any) => {
+            const formFieldName = field.fieldLabel;
+            const webhookFieldName = field.fieldLabel.replace(/\s+/g, "_");
+            const webhookReference = `$json.body.${webhookFieldName}`;
+
+            const basicPatterns = [
+              {
+                from: `{{ $json["${formFieldName}"] }}`,
+                to: `{{ ${webhookReference} }}`,
+              },
+              {
+                from: `{{ $json['${formFieldName}'] }}`,
+                to: `{{ ${webhookReference} }}`,
+              },
+              {
+                from: `{{ $json.${formFieldName} }}`,
+                to: `{{ ${webhookReference} }}`,
+              },
+              {
+                from: `{{$json["${formFieldName}"]}}`,
+                to: `{{ ${webhookReference} }}`,
+              },
+              {
+                from: `{{$json['${formFieldName}']}}`,
+                to: `{{ ${webhookReference} }}`,
+              },
+              {
+                from: `{{$json.${formFieldName}}}`,
+                to: `{{ ${webhookReference} }}`,
+              },
+            ];
+
+            basicPatterns.forEach((pattern) => {
+              transformed = transformed.replace(
+                new RegExp(
+                  pattern.from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+                  "g"
+                ),
+                pattern.to
+              );
+            });
+          });
+
+          return transformed;
+        } else if (Array.isArray(obj)) {
+          return obj.map(transformParameters);
+        } else if (obj && typeof obj === "object") {
+          const result: any = {};
+          for (const key in obj) {
+            result[key] = transformParameters(obj[key]);
+          }
+          return result;
+        }
+        return obj;
+      };
+
+      return {
+        ...node,
+        parameters: transformParameters(node.parameters),
+      };
+    });
+  }
+
+  // Update workflow name
+  workflow.name = workflowName;
+
+  return { workflow, webhookId };
+};
+
+// Upload handler for Step 8
+const handleUploadTransformedWorkflow = async (
+  workflowData: WorkflowData,
+  extractedFormData: FormData,
+  credentials: { instanceUrl: string; apiKey: string },
+  setIsUploadingFinal: (loading: boolean) => void,
+  setUploadFinalResult: (
+    result: { success: boolean; message: string; workflow?: any } | null
+  ) => void
+) => {
+  setIsUploadingFinal(true);
+  setUploadFinalResult(null);
+
+  try {
+    // Generate the transformed workflow
+    const { workflow: transformedWorkflow, webhookId } =
+      generateTransformedWorkflow(
+        workflowData,
+        extractedFormData,
+        extractedFormData.formTitle + "-FINAL-" + Date.now()
+      );
+
+    const response = await fetch("/api/n8n/createWorkflow", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        instanceUrl: credentials.instanceUrl,
+        apiKey: credentials.apiKey,
+        workflowData: transformedWorkflow,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      setUploadFinalResult({
+        success: true,
+        message: `Transformed workflow "${transformedWorkflow.name}" created successfully!`,
+        workflow: { ...data.workflow, webhookId },
+      });
+    } else {
+      setUploadFinalResult({
+        success: false,
+        message: data.error || "Failed to create transformed workflow",
+      });
+    }
+  } catch (error) {
+    setUploadFinalResult({
+      success: false,
+      message: "An error occurred while uploading the transformed workflow",
+    });
+  } finally {
+    setIsUploadingFinal(false);
+  }
+};
+
 // Form data interfaces
 interface FormData {
   formTitle: string;
-  formDescription: string;
+  formDescription?: string; // Make optional since some workflows don't have descriptions
   formFields: FormField[];
 }
 
@@ -797,17 +1594,18 @@ function extractFormData(jsonData: N8nNode[]): FormData | null {
 
     const { formTitle, formDescription, formFields } = firstItem.parameters;
 
-    if (!formTitle || !formDescription || !formFields?.values) {
+    if (!formTitle || !formFields?.values) {
       return null;
     }
 
     return {
       formTitle,
-      formDescription,
+      formDescription: formDescription || "", // Make formDescription optional
       formFields: formFields.values,
     };
   } catch (error) {
     console.error("Error extracting form data:", error);
+    console.log("jsonData structure:", JSON.stringify(jsonData, null, 2));
     return null;
   }
 }

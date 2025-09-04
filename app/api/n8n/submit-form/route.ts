@@ -2,19 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(request: NextRequest) {
   try {
-    const { webhookUrl, formData, workflowName } = await request.json();
+    // Get FormData instead of JSON (following reference pattern)
+    const formData = await request.formData();
+    
+    // Extract webhook URL and workflow name from FormData
+    const webhookUrl = formData.get("webhookUrl") as string;
+    const workflowName = formData.get("workflowName") as string;
 
     // Validate required fields
     if (!webhookUrl) {
       return NextResponse.json(
         { success: false, error: "Webhook URL is required" },
-        { status: 400 }
-      );
-    }
-
-    if (!formData || Object.keys(formData).length === 0) {
-      return NextResponse.json(
-        { success: false, error: "Form data is required" },
         { status: 400 }
       );
     }
@@ -29,20 +27,27 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log("Submitting form to n8n webhook:", {
+    console.log("Submitting FormData to n8n webhook:", {
       webhookUrl,
       workflowName,
-      formDataKeys: Object.keys(formData),
     });
 
-    // Submit form data to n8n webhook
+    // Create new FormData for n8n (removing our internal fields)
+    const n8nFormData = new FormData();
+    
+    // Copy all fields except our internal ones
+    for (const [key, value] of formData.entries()) {
+      if (key !== "webhookUrl" && key !== "workflowName") {
+        n8nFormData.append(key, value);
+        console.log(`Adding to n8n FormData: ${key} = ${value instanceof File ? `[File: ${value.name}]` : value}`);
+      }
+    }
+
+    // Submit FormData to n8n webhook (following reference pattern)
     const response = await fetch(webhookUrl, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-      },
-      body: JSON.stringify(formData),
+      body: n8nFormData,
+      // Don't set Content-Type header - let browser set it with boundary for multipart/form-data
     });
 
     // Get response text first to handle both JSON and plain text responses
