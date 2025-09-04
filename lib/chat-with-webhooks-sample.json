@@ -1,0 +1,166 @@
+{
+  "name": "My workflow 17",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "89298321-85bb-43c6-bbac-b834fc6cbca0",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -896,
+        -112
+      ],
+      "id": "739229c6-ab95-471c-aa17-c74ae12b1385",
+      "name": "Webhook",
+      "webhookId": "89298321-85bb-43c6-bbac-b834fc6cbca0"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.body.message }}",
+        "options": {
+          "systemMessage": "You are a helpful assistant"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 2.2,
+      "position": [
+        -656,
+        -192
+      ],
+      "id": "2756957a-9a43-4c26-b031-ee35d9b8a7de",
+      "name": "AI Agent"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "gpt-4o-mini"
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.2,
+      "position": [
+        -640,
+        32
+      ],
+      "id": "f6577f95-4cc0-474d-9324-8cac722d7570",
+      "name": "OpenAI Chat Model",
+      "credentials": {
+        "openAiApi": {
+          "id": "28sUktFNH4z21vr6",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"output\": $json.output } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        -304,
+        -192
+      ],
+      "id": "530cd30d-6243-4499-8a51-56f43f582711",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "henrymunoz1.app.n8n.cloud",
+            "user-agent": "FlowFront-ChatWebhook/1.0",
+            "content-length": "113",
+            "accept": "*/*",
+            "accept-encoding": "gzip, br",
+            "accept-language": "*",
+            "cdn-loop": "cloudflare; loops=1; subreqs=1",
+            "cf-connecting-ip": "2601:5c2:8600:10c0:2564:d4ae:aa51:d41f",
+            "cf-ew-via": "15",
+            "cf-ipcountry": "US",
+            "cf-ray": "97a034fb968f151e-RIC",
+            "cf-visitor": "{\"scheme\":\"https\"}",
+            "cf-worker": "n8n.cloud",
+            "content-type": "application/json",
+            "sec-fetch-mode": "cors",
+            "x-forwarded-for": "2601:5c2:8600:10c0:2564:d4ae:aa51:d41f, 172.69.248.179",
+            "x-forwarded-host": "henrymunoz1.app.n8n.cloud",
+            "x-forwarded-port": "443",
+            "x-forwarded-proto": "https",
+            "x-forwarded-server": "traefik-prod-users-gwc-15-6cb64f5ddc-dln99",
+            "x-is-trusted": "yes",
+            "x-real-ip": "2601:5c2:8600:10c0:2564:d4ae:aa51:d41f"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "message": "d",
+            "timestamp": "2025-09-04T20:23:50.161Z",
+            "sessionId": "chat-chat-working-backend copy-1757017429864"
+          },
+          "webhookUrl": "https://henrymunoz1.app.n8n.cloud/webhook/89298321-85bb-43c6-bbac-b834fc6cbca0",
+          "executionMode": "production"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "77ae147b-956d-4304-a9c3-057fd419b31c",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c867f0c0f4b0048b4ae56aeb4d1a9bfe1535d1b4b8c09e262aba11290b88728a"
+  },
+  "id": "q5w5R0eXvI4rZ2lX",
+  "tags": []
+}

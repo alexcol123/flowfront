@@ -1028,12 +1028,12 @@ export default function WorkflowPage() {
         </h2>
 
         {/* Display extracted form data */}
-        {extractedFormData && (
+        {extractedFormData ? (
           <Card className="w-full">
             <CardHeader>
-              <CardTitle>Extracted Form Data</CardTitle>
+              <CardTitle>✅ Extracted Form Data</CardTitle>
               <p className="text-sm text-gray-500">
-                Successfully extracted form configuration
+                Successfully extracted form configuration from trigger nodes
               </p>
             </CardHeader>
             <CardContent>
@@ -1042,6 +1042,68 @@ export default function WorkflowPage() {
                   {JSON.stringify(extractedFormData, null, 2)}
                 </pre>
               </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card className="w-full border-orange-500">
+            <CardHeader>
+              <CardTitle className="text-orange-700">⚠️ No Form Data Extracted</CardTitle>
+              <p className="text-sm text-gray-500">
+                Could not extract form configuration from the trigger nodes
+              </p>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {triggerNodes.length > 0 ? (
+                <>
+                  <div className="bg-orange-50 p-4 rounded-lg">
+                    <p className="text-orange-800 font-medium mb-2">Found {triggerNodes.length} trigger node{triggerNodes.length !== 1 ? 's' : ''}, but none are form triggers:</p>
+                    <ul className="text-sm text-orange-700 space-y-1">
+                      {triggerNodes.map((node, idx) => (
+                        <li key={idx} className="list-disc list-inside">
+                          <strong>{node.name || 'Unnamed'}:</strong> {node.type}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                  
+                  <div className="bg-blue-50 p-4 rounded-lg">
+                    <p className="text-blue-800 font-medium mb-2">💡 Expected for form workflows:</p>
+                    <ul className="text-sm text-blue-700 space-y-1 list-disc list-inside">
+                      <li>Trigger type: <code>n8n-nodes-base.formTrigger</code></li>
+                      <li>Parameters with <code>formTitle</code> and <code>formFields.values</code></li>
+                    </ul>
+                  </div>
+
+                  {triggerNodes.some(node => node.type === '@n8n/n8n-nodes-langchain.chatTrigger') && (
+                    <div className="bg-green-50 p-4 rounded-lg border border-green-200">
+                      <p className="text-green-800 font-medium mb-2">🔄 This appears to be a chat workflow:</p>
+                      <p className="text-sm text-green-700">
+                        For chat workflows, please use the <strong>workflow-chat</strong> page instead, 
+                        which is specifically designed for chat triggers.
+                      </p>
+                    </div>
+                  )}
+                  
+                  <details className="group">
+                    <summary className="cursor-pointer text-sm font-medium hover:text-blue-600">🔍 View Trigger Nodes Data</summary>
+                    <div className="mt-2 bg-gray-50 rounded-lg p-4 max-h-64 overflow-auto">
+                      <pre className="text-sm font-mono whitespace-pre-wrap">
+                        {JSON.stringify(triggerNodes, null, 2)}
+                      </pre>
+                    </div>
+                  </details>
+                </>
+              ) : (
+                <div className="bg-gray-50 p-4 rounded-lg text-center">
+                  <p className="text-gray-600">
+                    No trigger nodes found in the workflow.
+                    <br />
+                    <span className="text-sm text-gray-500">
+                      Make sure the workflow contains form trigger or chat trigger nodes.
+                    </span>
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}

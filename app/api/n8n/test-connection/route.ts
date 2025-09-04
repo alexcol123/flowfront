@@ -17,7 +17,7 @@ export async function POST(request: NextRequest) {
     // Build URL with query parameters as per n8n API docs
     const url = new URL(`${instanceUrl}/api/v1/workflows`);
     url.searchParams.append("limit", "100"); // Get up to 100 workflows
-    url.searchParams.append("active", "false"); // Include inactive workflows
+    // url.searchParams.append("active", "true"); // Include inactive workflows
 
     console.log("Fetching workflows from:", url.toString());
 

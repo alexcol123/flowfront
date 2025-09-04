@@ -103,13 +103,16 @@ export default function Home() {
     }
   }
 
-  async function handleWorkflowSelection(workflowName: string) {
+  async function handleWorkflowSelection(workflowName: string, workflowType: 'form' | 'chat' = 'form') {
     setIsLoadingWorkflow(true)
 
     try {
-      // Navigate to the workflow page
+      // Navigate to the appropriate workflow page based on type
       const encodedWorkflowName = encodeURIComponent(workflowName)
-      router.push(`/workflow/${encodedWorkflowName}`)
+      const route = workflowType === 'chat' 
+        ? `/workflow-chat/${encodedWorkflowName}`
+        : `/workflow/${encodedWorkflowName}`
+      router.push(route)
     } catch (error) {
       console.error('Error navigating to workflow:', error)
     } finally {
@@ -222,7 +225,7 @@ export default function Home() {
                           variant="outline"
                           className="w-full justify-start text-left"
                           disabled={isLoadingWorkflow}
-                          onClick={() => handleWorkflowSelection(name)}
+                          onClick={() => handleWorkflowSelection(name, 'form')}
                         >
                           {isLoadingWorkflow ? "Loading..." : name}
                         </Button>
@@ -251,7 +254,7 @@ export default function Home() {
                           variant="outline"
                           className="w-full justify-start text-left"
                           disabled={isLoadingWorkflow}
-                          onClick={() => handleWorkflowSelection(name)}
+                          onClick={() => handleWorkflowSelection(name, 'chat')}
                         >
                           {isLoadingWorkflow ? "Loading..." : name}
                         </Button>
