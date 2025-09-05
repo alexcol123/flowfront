@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     // First, get all workflows to find the ID of the workflow by name
     const listUrl = new URL(`${instanceUrl}/api/v1/workflows`);
     listUrl.searchParams.append("limit", "100");
-    listUrl.searchParams.append("active", "false");
+    // listUrl.searchParams.append("active", "false");
 
     console.log('Finding workflow by name:', workflowName);
 

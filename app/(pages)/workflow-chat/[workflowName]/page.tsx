@@ -19,6 +19,8 @@ export default function WorkflowChatPage() {
 
   const EditedWorkflowName =
     workflowName + "-FLOW-FRONT-CHAT" + "-date-" + dateNow;
+  const FinalWorkflowName = EditedWorkflowName + "-FINAL";
+  
   const [workflowData, setWorkflowData] = useState<WorkflowData | null>(null);
   const [triggerNodes, setTriggerNodes] = useState<N8nNode[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -30,6 +32,12 @@ export default function WorkflowChatPage() {
   const [webhookUrl, setWebhookUrl] = useState("");
   const [messages, setMessages] = useState<Array<{ role: "user" | "assistant", content: string }>>([]);
   const [inputMessage, setInputMessage] = useState("");
+  const [isUploadingFinal, setIsUploadingFinal] = useState(false);
+  const [uploadFinalResult, setUploadFinalResult] = useState<{
+    success: boolean;
+    message: string;
+    workflow?: any;
+  } | null>(null);
 
   // Extract chat data from trigger nodes
   const extractedChatData = extractChatData(triggerNodes, workflowData || undefined);
@@ -306,6 +314,7 @@ export default function WorkflowChatPage() {
                   parameters: {
                     httpMethod: "POST",
                     path: webhookId,
+                    responseMode: "responseNode", // Wait for response from "Respond to Webhook" node
                     options: {},
                   },
                   type: "n8n-nodes-base.webhook",
@@ -348,6 +357,21 @@ export default function WorkflowChatPage() {
                     workflow.nodes = workflow.nodes.map((node: any) => {
                       if (node.id === webhookNodeId) return node; // Skip the webhook node itself
 
+                      // Special handling for AI Agent nodes
+                      if (node.type === "@n8n/n8n-nodes-langchain.agent") {
+                        return {
+                          ...node,
+                          parameters: {
+                            ...node.parameters,
+                            promptType: "define",
+                            text: "={{ $json.body.message }}",
+                            options: {
+                              ...node.parameters?.options,
+                              systemMessage: "You are a helpful assistant"
+                            }
+                          }
+                        };
+                      }
 
                       // Deep transform all parameters to update variable references
                       const transformParameters = (obj: any): any => {
@@ -443,6 +467,83 @@ export default function WorkflowChatPage() {
 
                   }
 
+                  // Add "Respond to Webhook" node at the end of the workflow
+                  const respondNodeId = generateId();
+                  const respondNode = {
+                    parameters: {
+                      respondWith: "json",
+                      responseBody: "={{ $json.output.toJsonString() }}",
+                      options: {}
+                    },
+                    type: "n8n-nodes-base.respondToWebhook",
+                    typeVersion: 1.4,
+                    position: [224, 16], // Position from sample
+                    id: respondNodeId,
+                    name: "Respond to Webhook"
+                  };
+
+                  // Add the response node to the workflow
+                  workflow.nodes.push(respondNode);
+
+                  // Update connections for complete request-response cycle
+                  // Clear existing connections and rebuild them properly
+                  workflow.connections = {};
+                  
+                  // Main flow: Webhook → AI Agent → Respond to Webhook
+                  workflow.connections["Webhook"] = {
+                    main: [
+                      [
+                        {
+                          node: "AI Agent",
+                          type: "main",
+                          index: 0
+                        }
+                      ]
+                    ]
+                  };
+
+                  // Find AI Agent nodes and connect them to the response node
+                  const aiAgentNodes = workflow.nodes.filter((node: any) => 
+                    node.type === "@n8n/n8n-nodes-langchain.agent"
+                  );
+
+                  if (aiAgentNodes.length > 0) {
+                    aiAgentNodes.forEach((agentNode: any) => {
+                      workflow.connections[agentNode.name] = {
+                        main: [
+                          [
+                            {
+                              node: "Respond to Webhook",
+                              type: "main",
+                              index: 0
+                            }
+                          ]
+                        ]
+                      };
+                    });
+                  }
+
+                  // Preserve OpenAI model connections
+                  const openAiNodes = workflow.nodes.filter((node: any) => 
+                    node.type === "@n8n/n8n-nodes-langchain.lmChatOpenAi"
+                  );
+
+                  if (openAiNodes.length > 0) {
+                    openAiNodes.forEach((openAiNode: any) => {
+                      workflow.connections[openAiNode.name] = {
+                        ai_languageModel: [
+                          [
+                            {
+                              node: "AI Agent",
+                              type: "ai_languageModel",
+                              index: 0
+                            }
+                          ]
+                        ]
+                      };
+                    });
+                  }
+
                   // Update workflow name
                   workflow.name = EditedWorkflowName;
 
@@ -451,6 +552,26 @@ export default function WorkflowChatPage() {
 
                 return (
                   <>
+                    <div className="space-y-2 mb-4">
+                      <p className="text-sm font-medium">🔄 Complete Transformation Summary:</p>
+                      <div className="bg-green-50 p-3 rounded-lg space-y-1">
+                        <p className="text-xs">
+                          ✅ <strong>Webhook Node:</strong> Added with responseMode="responseNode" (waits for response)
+                        </p>
+                        <p className="text-xs">
+                          ✅ <strong>AI Agent:</strong> Updated with promptType="define", text={`"={{ $json.body.message }}"`}, system message
+                        </p>
+                        <p className="text-xs">
+                          ✅ <strong>Response Node:</strong> Added "Respond to Webhook" node with JSON output
+                        </p>
+                        <p className="text-xs">
+                          ✅ <strong>OpenAI Model:</strong> Preserved existing OpenAI nodes with ai_languageModel connections
+                        </p>
+                        <p className="text-xs">
+                          ✅ <strong>Complete Flow:</strong> Webhook → AI Agent → Respond to Webhook + OpenAI → AI Agent
+                        </p>
+                      </div>
+                    </div>
 
                     <div className="space-y-2 mb-4">
                       <p className="text-sm font-medium">Webhook Details:</p>
@@ -464,6 +585,30 @@ export default function WorkflowChatPage() {
                         </p>
                         <p className="text-xs">
                           <strong>Method:</strong> POST
+                        </p>
+                        <p className="text-xs">
+                          <strong>Expected Body:</strong> {`{"message": "user message", "sessionId": "optional"}`}
+                        </p>
+                        <p className="text-xs">
+                          <strong>Response Format:</strong> {`{"output": "AI response"}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 mb-4">
+                      <p className="text-sm font-medium">📝 Usage Instructions:</p>
+                      <div className="bg-blue-50 p-3 rounded-lg space-y-1">
+                        <p className="text-xs">
+                          <strong>1.</strong> Import the transformed workflow into your n8n instance
+                        </p>
+                        <p className="text-xs">
+                          <strong>2.</strong> Activate the workflow to enable the webhook endpoint
+                        </p>
+                        <p className="text-xs">
+                          <strong>3.</strong> Send POST requests to the webhook URL with message data
+                        </p>
+                        <p className="text-xs">
+                          <strong>4.</strong> The AI will process messages and return responses via the webhook
                         </p>
                       </div>
                     </div>
@@ -839,48 +984,315 @@ export default function WorkflowChatPage() {
         <CreateWorkflowComponent workflowName={EditedWorkflowName} />
 
         <h2 className="text-xl font-semibold">
-          Step 7: Next Steps
+          Step 7: Create Transformed Chat Workflow in n8n
         </h2>
 
-        {workflowData && extractedChatData && (
-          <Card className="w-full border-green-500">
+        {workflowData && triggerNodes.length > 0 && (
+          <Card className="w-full border-purple-500">
             <CardHeader>
-              <CardTitle>
-                ✨ Chat Workflow Analysis Complete
-              </CardTitle>
+              <CardTitle>🚀 Upload Transformed Chat Workflow</CardTitle>
               <p className="text-sm text-gray-500">
-                Your chat workflow has been analyzed and the interface is ready to use.
-                The extracted configuration shows how your chat trigger is set up.
+                Upload the transformed workflow (chat trigger → webhook) directly to
+                your n8n instance with a single click.
               </p>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div className="bg-green-50 p-4 rounded-lg">
-                  <p className="text-sm text-green-800 font-medium mb-2">
-                    ✅ Successfully Extracted:
+                <div className="bg-purple-50 p-4 rounded-lg">
+                  <p className="text-sm text-purple-800 font-medium mb-2">
+                    📋 What this will upload:
                   </p>
-                  <ul className="text-xs text-green-700 space-y-1 list-disc list-inside">
-                    <li>Chat model configuration and settings</li>
-                    <li>System messages and prompt templates</li>
-                    <li>Memory and conversation settings</li>
-                    <li>Chat interface parameters</li>
+                  <ul className="text-xs text-purple-700 space-y-1 list-disc list-inside">
+                    <li>
+                      Webhook trigger with responseMode (waits for AI response)
+                    </li>
+                    <li>
+                      AI Agent configured to process messages from webhook body
+                    </li>
+                    <li>
+                      Respond to Webhook node for JSON response output
+                    </li>
+                    <li>
+                      Complete connection flow with preserved OpenAI models
+                    </li>
+                    <li>
+                      Unique webhook ID and node IDs generated automatically
+                    </li>
                   </ul>
                 </div>
 
-                <div className="bg-blue-50 p-4 rounded-lg">
-                  <p className="text-sm text-blue-800 font-medium mb-2">
-                    💡 Usage:
+                <div className="bg-yellow-50 p-4 rounded-lg">
+                  <p className="text-sm text-yellow-800 font-medium mb-2">
+                    ⚠️ Before Uploading:
                   </p>
-                  <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-                    <li>Use the chat interface above to test your workflow</li>
-                    <li>Enter the webhook URL from your n8n chat trigger</li>
-                    <li>Send messages to interact with your chat workflow</li>
+                  <ul className="text-xs text-yellow-700 space-y-1 list-disc list-inside">
+                    <li>
+                      This will create a new workflow using the transformation from Step 2
+                    </li>
+                    <li>
+                      The original chat trigger will be replaced with a webhook trigger
+                    </li>
+                    <li>
+                      You can download the transformed JSON above first if needed
+                    </li>
+                    <li>
+                      Make sure your n8n instance has the required AI/LangChain nodes
+                    </li>
                   </ul>
                 </div>
 
-                <p className="text-sm text-gray-600">
-                  <strong>Analyzed Workflow:</strong> {workflowName}
-                </p>
+                <div className="text-center space-y-3">
+                  <p className="text-sm text-gray-600">
+                    <strong>Final Workflow Name:</strong> {FinalWorkflowName}
+                  </p>
+
+                  {(() => {
+                    // Get the transformed workflow from Step 2
+                    if (!workflowData) return null;
+                    
+                    // Generate the transformed workflow (same logic as Step 2)
+                    const generateId = () => {
+                      if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+                        return crypto.randomUUID();
+                      }
+                      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+                        const r = Math.random() * 16 | 0;
+                        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+                        return v.toString(16);
+                      });
+                    };
+                    const webhookId = generateId();
+                    const webhookNodeId = generateId();
+
+                    const webhookNode = {
+                      parameters: {
+                        httpMethod: "POST",
+                        path: webhookId,
+                        responseMode: "responseNode",
+                        options: {},
+                      },
+                      type: "n8n-nodes-base.webhook",
+                      typeVersion: 2.1,
+                      position: [0, 0],
+                      id: webhookNodeId,
+                      name: "Webhook",
+                      webhookId: webhookId,
+                    };
+
+                    const transformedWorkflow = (() => {
+                      const workflow = JSON.parse(JSON.stringify(workflowData));
+                      const chatTriggerIndex = workflow.nodes?.findIndex(
+                        (node: any) => node.type === "@n8n/n8n-nodes-langchain.chatTrigger"
+                      );
+
+                      if (chatTriggerIndex !== -1 && workflow.nodes) {
+                        const chatTrigger = workflow.nodes[chatTriggerIndex];
+                        webhookNode.position = chatTrigger.position || [0, 0];
+                        workflow.nodes[chatTriggerIndex] = webhookNode;
+
+                        if (workflow.connections && workflow.connections[chatTrigger.name]) {
+                          workflow.connections["Webhook"] = workflow.connections[chatTrigger.name];
+                          delete workflow.connections[chatTrigger.name];
+                        }
+
+                        workflow.nodes = workflow.nodes.map((node: any) => {
+                          if (node.id === webhookNodeId) return node;
+
+                          if (node.type === "@n8n/n8n-nodes-langchain.agent") {
+                            return {
+                              ...node,
+                              parameters: {
+                                ...node.parameters,
+                                promptType: "define",
+                                text: "={{ $json.body.message }}",
+                                options: {
+                                  ...node.parameters?.options,
+                                  systemMessage: "You are a helpful assistant"
+                                }
+                              }
+                            };
+                          }
+
+                          const transformParameters = (obj: any): any => {
+                            if (typeof obj === "string") {
+                              let transformed = obj;
+                              const chatTriggerNodeName = chatTrigger.name || "When chat message received";
+                              const escapedNodeName = chatTriggerNodeName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+                              transformed = transformed.replace(new RegExp(`\\$\\('${escapedNodeName}'\\)`, "g"), `$('Webhook')`);
+                              transformed = transformed.replace(/\$\('Webhook'\)\.first\(\)\.json\./g, `$('Webhook').first().json.body.`);
+                              transformed = transformed.replace(/\$\('Webhook'\)\.last\(\)\.json\./g, `$('Webhook').first().json.body.`);
+                              transformed = transformed.replace(/\$\('Webhook'\)\.item\.json\./g, `$('Webhook').item.json.body.`);
+
+                              const chatPatterns = [
+                                { from: "{{ $json.message }}", to: "{{ $json.body.message }}" },
+                                { from: "{{$json.message}}", to: "{{ $json.body.message }}" },
+                                { from: "{{ $json.sessionId }}", to: "{{ $json.body.sessionId }}" },
+                                { from: "{{$json.sessionId}}", to: "{{ $json.body.sessionId }}" },
+                                { from: "{{ $json.timestamp }}", to: "{{ $json.body.timestamp }}" },
+                                { from: "{{$json.timestamp}}", to: "{{ $json.body.timestamp }}" },
+                              ];
+
+                              chatPatterns.forEach((pattern) => {
+                                transformed = transformed.replace(
+                                  new RegExp(pattern.from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"),
+                                  pattern.to
+                                );
+                              });
+
+                              return transformed;
+                            } else if (Array.isArray(obj)) {
+                              return obj.map(transformParameters);
+                            } else if (obj && typeof obj === "object") {
+                              const result: any = {};
+                              for (const key in obj) {
+                                result[key] = transformParameters(obj[key]);
+                              }
+                              return result;
+                            }
+                            return obj;
+                          };
+
+                          return {
+                            ...node,
+                            parameters: transformParameters(node.parameters),
+                          };
+                        });
+
+                        // Add "Respond to Webhook" node
+                        const respondNodeId = generateId();
+                        const respondNode = {
+                          parameters: {
+                            respondWith: "json",
+                            responseBody: "={{ $json.output.toJsonString() }}",
+                            options: {}
+                          },
+                          type: "n8n-nodes-base.respondToWebhook",
+                          typeVersion: 1.4,
+                          position: [224, 16],
+                          id: respondNodeId,
+                          name: "Respond to Webhook"
+                        };
+
+                        workflow.nodes.push(respondNode);
+
+                        // Update connections
+                        workflow.connections = {};
+                        workflow.connections["Webhook"] = {
+                          main: [
+                            [
+                              {
+                                node: "AI Agent",
+                                type: "main",
+                                index: 0
+                              }
+                            ]
+                          ]
+                        };
+
+                        const aiAgentNodes = workflow.nodes.filter((node: any) => 
+                          node.type === "@n8n/n8n-nodes-langchain.agent"
+                        );
+
+                        if (aiAgentNodes.length > 0) {
+                          aiAgentNodes.forEach((agentNode: any) => {
+                            workflow.connections[agentNode.name] = {
+                              main: [
+                                [
+                                  {
+                                    node: "Respond to Webhook",
+                                    type: "main",
+                                    index: 0
+                                  }
+                                ]
+                              ]
+                            };
+                          });
+                        }
+
+                        const openAiNodes = workflow.nodes.filter((node: any) => 
+                          node.type === "@n8n/n8n-nodes-langchain.lmChatOpenAi"
+                        );
+
+                        if (openAiNodes.length > 0) {
+                          openAiNodes.forEach((openAiNode: any) => {
+                            workflow.connections[openAiNode.name] = {
+                              ai_languageModel: [
+                                [
+                                  {
+                                    node: "AI Agent",
+                                    type: "ai_languageModel",
+                                    index: 0
+                                  }
+                                ]
+                              ]
+                            };
+                          });
+                        }
+                      }
+
+                      workflow.name = EditedWorkflowName;
+                      return workflow;
+                    })();
+
+                    return (
+                      <Button
+                        onClick={() =>
+                          handleUploadTransformedChatWorkflow(
+                            workflowData,
+                            extractedChatData!,
+                            transformedWorkflow,
+                            { instanceUrl, apiKey },
+                            FinalWorkflowName,
+                            setIsUploadingFinal,
+                            setUploadFinalResult
+                          )
+                        }
+                        disabled={isUploadingFinal}
+                        className="bg-purple-600 hover:bg-purple-700"
+                      >
+                        {isUploadingFinal
+                          ? "Uploading..."
+                          : "🚀 Upload Transformed Chat Workflow to n8n"}
+                      </Button>
+                    );
+                  })()}
+
+                  {uploadFinalResult && (
+                    <div
+                      className={`mt-4 p-4 rounded-md border ${
+                        uploadFinalResult.success
+                          ? "bg-green-50 text-green-800 border-green-200"
+                          : "bg-red-50 text-red-800 border-red-200"
+                      }`}
+                    >
+                      <p className="font-medium">{uploadFinalResult.message}</p>
+                      {uploadFinalResult.success &&
+                        uploadFinalResult.workflow && (
+                          <div className="mt-3 text-sm space-y-1">
+                            <p>
+                              <strong>Workflow ID:</strong>{" "}
+                              {uploadFinalResult.workflow.id}
+                            </p>
+                            <p>
+                              <strong>Workflow Name:</strong>{" "}
+                              {uploadFinalResult.workflow.name}
+                            </p>
+                            <p>
+                              <strong>Webhook URL:</strong> {instanceUrl}
+                              /webhook/{uploadFinalResult.workflow.webhookId}
+                            </p>
+                            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                              <p className="text-xs text-yellow-800">
+                                <strong>💡 Next Steps:</strong> Your transformed chat workflow is now ready! 
+                                You can test it by sending POST requests to the webhook URL above with 
+                                JSON body: {`{"message": "your message", "sessionId": "optional"}`}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                    </div>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -1090,3 +1502,67 @@ function analyzeConnectedNodes(chatTriggerName: string, workflowData: WorkflowDa
     return undefined;
   }
 }
+
+// Upload handler for Step 7 - Chat Workflow Upload
+const handleUploadTransformedChatWorkflow = async (
+  workflowData: WorkflowData,
+  extractedChatData: ChatData,
+  transformedWorkflow: any, // The already-generated transformation from Step 2
+  credentials: { instanceUrl: string; apiKey: string },
+  finalWorkflowName: string, // Final workflow name parameter
+  setIsUploadingFinal: (loading: boolean) => void,
+  setUploadFinalResult: (
+    result: { success: boolean; message: string; workflow?: any } | null
+  ) => void
+) => {
+  setIsUploadingFinal(true);
+  setUploadFinalResult(null);
+
+  try {
+    // Use the transformed workflow that was already generated in Step 2
+    const finalWorkflow = {
+      ...transformedWorkflow,
+      name: finalWorkflowName,
+    };
+
+    const response = await fetch("/api/n8n/createWorkflow", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        instanceUrl: credentials.instanceUrl,
+        apiKey: credentials.apiKey,
+        workflowData: finalWorkflow,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (data.success) {
+      // Extract webhook ID from the transformed workflow
+      const webhookNode = finalWorkflow.nodes?.find((node: any) => 
+        node.type === "n8n-nodes-base.webhook"
+      );
+      const webhookId = webhookNode?.webhookId || webhookNode?.parameters?.path;
+
+      setUploadFinalResult({
+        success: true,
+        message: `Transformed chat workflow "${finalWorkflow.name}" created successfully!`,
+        workflow: { ...data.workflow, webhookId },
+      });
+    } else {
+      setUploadFinalResult({
+        success: false,
+        message: data.error || "Failed to create transformed chat workflow",
+      });
+    }
+  } catch (error) {
+    setUploadFinalResult({
+      success: false,
+      message: `Error uploading workflow: ${error instanceof Error ? error.message : "Unknown error"}`,
+    });
+  } finally {
+    setIsUploadingFinal(false);
+  }
+};
