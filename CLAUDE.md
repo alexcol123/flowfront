@@ -258,3 +258,5 @@ npm run lint        # Run ESLint
 - shadcn/ui components are configured with the New York style and use Lucide icons
 - The `cn()` utility function in `/lib/utils.ts` combines clsx and tailwind-merge for className management
 - Global styles are in `/app/globals.css`
+- use Context7 to check up-to-date docs when needed for implementing new libraries or frameworks, or adding features using them.
+- # Use n8n-MCP to: 1) Analyze uploaded n8n workflows for form triggers and webhook nodes, 2) Extract field schemas and validation rules, 3) Identify dashboard data points in workflows, 4) Validate node compatibility before transformation, and 5) Get accurate node documentation for FlowFront's workflow analyzer.
